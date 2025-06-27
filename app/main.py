@@ -1,9 +1,10 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from typing import Dict
 
 app = FastAPI()
 
+# Allow frontend from anywhere (for dev)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -12,30 +13,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-clients: List[WebSocket] = []
+# Dictionary to keep track of connected users by ID
+connected_peers: Dict[str, WebSocket] = {}
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+@app.websocket("/ws/{peer_id}")
+async def websocket_endpoint(websocket: WebSocket, peer_id: str):
     await websocket.accept()
-    clients.append(websocket)
+    connected_peers[peer_id] = websocket
+    print(f"✅ Connected: {peer_id}")
+
     try:
         while True:
-            data = await websocket.receive_text()
-            for client in clients:
-                if client != websocket:
-                    await client.send_text(data)
-    except Exception:
-        clients.remove(websocket)
-        await websocket.close()
+            data = await websocket.receive_json()
+            event = data.get("type")
+            target = data.get("to")
+            payload = data.get("data")
 
-@socket.on('call-user')
-def call_user(data):
-    emit('incoming-call', room=data['to'], data=...offer...)
+            if event in ["offer", "answer", "ice-candidate"] and target in connected_peers:
+                await connected_peers[target].send_json({
+                    "type": event,
+                    "from": peer_id,
+                    "data": payload
+                })
 
-@socket.on('answer-call')
-def answer_call(data):
-    emit('call-accepted', room=data['to'], data=...answer...)
-
-@socket.on('ice-candidate')
-def handle_ice(data):
-    emit('ice-candidate', room=data['to'], data=data['candidate'])
+    except WebSocketDisconnect:
+        print(f"❌ Disconnected: {peer_id}")
+        connected_peers.pop(peer_id, None)
