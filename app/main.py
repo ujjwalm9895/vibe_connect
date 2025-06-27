@@ -27,3 +27,15 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception:
         clients.remove(websocket)
         await websocket.close()
+
+@socket.on('call-user')
+def call_user(data):
+    emit('incoming-call', room=data['to'], data=...offer...)
+
+@socket.on('answer-call')
+def answer_call(data):
+    emit('call-accepted', room=data['to'], data=...answer...)
+
+@socket.on('ice-candidate')
+def handle_ice(data):
+    emit('ice-candidate', room=data['to'], data=data['candidate'])
