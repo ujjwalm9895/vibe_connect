@@ -12,3 +12,4 @@ A WebSocket signaling backend for peer-to-peer audio calling over Wi-Fi using Fa
 6. Select "Dockerfile"
 7. Allow unauthenticated access ✅
 8. Deploy
+sure
