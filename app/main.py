@@ -4,7 +4,6 @@ from typing import Dict
 
 app = FastAPI()
 
-# Allow frontend from anywhere (for dev)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -13,29 +12,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Dictionary to keep track of connected users by ID
 connected_peers: Dict[str, WebSocket] = {}
 
-@app.websocket("/ws/{peer_id}")
-async def websocket_endpoint(websocket: WebSocket, peer_id: str):
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    connected_peers[peer_id] = websocket
-    print(f"✅ Connected: {peer_id}")
+    peer_id = None
 
     try:
         while True:
             data = await websocket.receive_json()
-            event = data.get("type")
-            target = data.get("to")
-            payload = data.get("data")
+            event_type = data.get("type")
 
-            if event in ["offer", "answer", "ice-candidate"] and target in connected_peers:
-                await connected_peers[target].send_json({
-                    "type": event,
-                    "from": peer_id,
-                    "data": payload
-                })
+            # 1. Register new peer
+            if event_type == "register":
+                peer_id = data.get("name")
+                connected_peers[peer_id] = websocket
+                print(f"✅ Registered: {peer_id}")
+                # Send online user list to all
+                await broadcast_user_list()
+
+            # 2. Handle offer/answer/ice-candidate
+            elif event_type in ["offer", "answer", "ice-candidate"]:
+                target = data.get("to")
+                if target in connected_peers:
+                    await connected_peers[target].send_json({
+                        "type": event_type,
+                        "from": peer_id,
+                        "data": data.get("data")
+                    })
 
     except WebSocketDisconnect:
         print(f"❌ Disconnected: {peer_id}")
-        connected_peers.pop(peer_id, None)
+        if peer_id and peer_id in connected_peers:
+            connected_peers.pop(peer_id)
+            await broadcast_user_list()
+
+
+# Helper to broadcast list of all online users
+async def broadcast_user_list():
+    user_list = list(connected_peers.keys())
+    for ws in connected_peers.values():
+        await ws.send_json({ "type": "online-users", "users": user_list })
